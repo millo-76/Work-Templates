@@ -1,0 +1,8 @@
+job project:									resources:
+										https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst3850/software/release/16-1/best_practices_guide/BP_Cat3850.html
+best practice template for port security					https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst3850/software/release/16-1/best_practices_guide/BP_Cat3850.pdf
+2 models cisco 3850 - 9300 							https://www.cisco.com/c/en/us/support/docs/ip/access-lists/13608-21.html
+.1x on wireless or mac auth							https://www.cisco.com/c/en/us/support/switches/catalyst-3850-series-switches/products-installation-and-configuration-guides-list.html
+colorless ports									https://www.gevernova.com/content/dam/cyber_security/global/en_US/pdfs/2017-11-06%20CISCO%20Catalyst%203850x%20switches%20v2.pdf
+use notepad until we can import to GitHub					https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst3850/software/release/16-1/best_practices_guide/BP_Cat3850/BP_overview.html
+										https://www.cisco.com/c/en/us/td/docs/switches/lan/catalyst3850/software/release/16-1/best_practices_guide/BP_Cat3850/BP_wired_security.html

@@ -1,0 +1,192 @@
+! Hostname and Domain
+hostname $SwitchName$
+ip domain-name uccs.edu
+
+! Basic Services and Logging
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service pad
+service password-encryption
+secure boot-image
+secure boot-config
+security passwords min-length 12
+
+! Disable Unused Services
+no ip http server
+no ip http secure-server
+no ip source-route
+no cdp run
+no lldp run
+
+! Banner
+banner motd ^
+Unauthorized access is prohibited.^
+
+! SSH
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 2
+ip ssh logging events
+crypto key generate rsa modulus 2048
+ip domain-name uccs.edu
+
+username admin privilege 15 secret $adminSecret$
+
+! AAA and RADIUS Configuration
+aaa new-model
+aaa group server radius RADIUS-GROUP
+ server name $radiusServer1$
+ server name $radiusServer2$
+aaa authentication dot1x default group RADIUS-GROUP
+aaa authorization network default group RADIUS-GROUP
+aaa accounting update periodic 5
+aaa accounting dot1x default start-stop group RADIUS-GROUP
+aaa accounting exec default start-stop group RADIUS-GROUP
+aaa accounting commnds 15 default start-stop group RADIUS-GROUP
+
+radius-server host $radiusIP$ auth-port 1812 acct-port 1813 key $radiusKey$
+radius-server timeout 5
+radius-server retransmit 3
+radius-server deadtime 10
+ip radius source-interface Vlan$$
+
+! 802.1X Global Configuration
+dot1x system-auth-control
+! 802.1X Interface Template
+template type interface DOT1X_TEMPLATE
+ service-policy input MARKING
+ authentication port-control auto
+ authentication periodic
+ authentication timer reauthenticate server
+ dot1x pae authenticator
+ mab
+ authentication priority dot1x mab
+ authentication event fail action authorize vlan $guestVlan$
+ authentication event server dead action authorize vlan $guestVlan$
+ authentication event no-response action authorize vlan $guestVlan$
+ authentication host-mode multi-auth
+ authentication violation restrict
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ storm-control broadcast level 1.00
+ storm-control action shutdown
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security mac-address sticky
+ ip dhcp snooping trust
+
+! VTY Configuration
+line vty 0 15
+ login local
+ transport input ssh
+ exec-timeout 10 0
+
+! SNMP
+no snmp-server community $snmpRead$
+no snmp-server community $snmpWrite$
+no snmp-server community public
+no snmp-server community private
+
+snmp-server group SECURE v3 priv
+snmp-server user $snmpUser$ SECURE v3 auth sha $snmpAuth$ priv aes 256 $snmpPriv$
+snmp-server location $location$
+snmp-server contact $adminContact$
+
+! NTP
+ntp server $ntp1$
+ntp server $ntp2$
+
+! Archive Config
+archive
+ path flash:backup-$SwitchName$-config
+ write-memory
+
+! VLANs
+vlan $UserVLAN$
+ name $UserVLANname$
+vlan $VoiceVLAN$
+ name $VoiceVLANname$
+vlan $MgmtVLAN$
+ name MGMT
+
+! Interface VLAN for Management
+interface Vlan$MgmtVLAN$
+ ip address $mgmtIP$ $mgmtSubnetMask$
+ no shutdown
+
+! Default Gateway
+ip default-gateway $mgmtGateway$
+
+! Port Templates
+! --- USER ACCESS PORT TEMPLATE ---
+interface range $UserPorts$
+ switchport mode access
+ switchport access vlan $UserVLAN$
+ switchport voice vlan $VoiceVLAN$
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ storm-control broadcast level 5.00
+ storm-control multicast level 5.00
+ storm-control action shutdown
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security mac-address sticky
+
+! --- UPLINK/INFRA INTERFACES ---
+interface $UplinkPort$
+ description Uplink to Distribution
+ switchport mode trunk
+ switchport trunk allowed vlan $UserVLAN$,$VoiceVLAN$,$MgmtVLAN$
+ spanning-tree guard root
+
+! Enable Routing
+! ip routing
+
+! DHCP Snooping
+ip dhcp snooping
+ip dhcp snooping vlan $UserVLAN$
+no ip dhcp snooping information option
+
+! Dynamic ARP Inspection
+ip arp inspection vlan $UserVLAN$
+
+! NetFlow Exporter
+flow exporter CampusFlow
+ destination $FlowCollector$
+ source Vlan$MgmtVLAN$
+ transport udp 9996
+ template data timeout 60
+
+flow record netflow-original
+ match ipv4 source address
+ match ipv4 destination address
+ collect counter bytes
+ collect counter packets
+ collect timestamp sys-uptime first
+ collect timestamp sys-uptime last
+
+flow monitor UserMonitor
+ record netflow-original
+ exporter CampusFlow
+
+interface Vlan$MgmtVLAN$
+ ip flow monitor UserMonitor input
+
+! Logging
+logging buffered 4096 warnings
+
+! Syslog Configuration
+logging buffered 4096 warnings
+logging trap informational
+logging host $syslogServer$
+logging source-interface Vlan$MgmtVLAN$
+
+! End of Configuration
+end
+write memory
+!
+! End of Template
+!
