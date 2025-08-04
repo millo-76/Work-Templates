@@ -1,0 +1,168 @@
+service timestamps debug datetime msec
+service timestamps log datetime msec
+no service pad
+service password-encryption
+secure boot-image
+secure boot-config
+security passwords min-length 12
+no ip http server
+no ip http secure-server
+no ip source-route
+no cdp run
+no lldp run
+
+hostname $SwitchName$
+ip domain-name uccs.edu
+crypto key generate rsa modulus 2048
+ip ssh version 2
+ip ssh time-out 300
+
+aaa new-model
+aaa authentication dot1x default group radius
+aaa authorization network default group radius
+aaa accounting update periodic 5
+aaa accounting dot1x default start-stop group radius
+
+radius-server host $radiusIP$ auth-port 1812 acct-port 1813 key $radiusKey$
+radius-server timeout 5
+radius-server retransmit 3
+
+username admin privilege 15 secret $adminSecret$
+
+line console 0
+ login local
+ exec-timeout 5 0
+ logging synchronous
+
+line vty 0 15
+ login authentication default
+ transport input ssh
+ exec-timeout 5 0
+ access-class MGMT_ACCESS in
+
+ip access-list standard MGMT_ACCESS
+ permit $mgmtSubnet$ 0.0.0.255
+ deny any
+
+vlan 10
+ name $VLANname$
+vlan 20
+ name $VLANname$
+vlan 30
+ name $VLANname$
+vlan 99
+ name $VLANname$
+
+template type interface DOT1X_TEMPLATE
+ service-policy input MARK-DOT1X-TRAFFIC
+ authentication port-control auto
+ dot1x pae authenticator
+ mab
+ authentication priority dot1x mab
+ authentication event fail action authorize vlan $guestVlan$
+ authentication event server dead action authorize vlan $guestVlan$
+ authentication event no-response action authorize vlan $guestVlan$
+ authentication host-mode multi-auth
+ authentication violation restrict
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ switchport port-security
+ switchport port-security maximum 2
+ switchport port-security violation restrict
+ switchport port-security mac-address sticky
+
+interface GigabitEthernet$$/$$/$$
+ description Uplink to AP-3850
+ switchport trunk encapsulation dot1q
+ switchport mode trunk
+ switchport trunk allowed vlan $$,$$,$$
+ spanning-tree portfast trunk
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ ip dhcp snooping trust
+ ip arp inspection trust
+ mls qos trust dscp
+
+interface range GigabitEthernet$$/$$/$$ - $$
+ description Wired Client Access
+ switchport mode access
+ switchport access vlan $$
+ load-interval 30
+ storm-control broadcast level 10.00
+ service-policy input MARK-DOT1X-TRAFFIC
+ source template DOT1X_TEMPLATE
+
+interface GigabitEthernet$$/$$/$$
+ description IP Phone + PC
+ switchport mode access
+ switchport access vlan $$
+ switchport voice vlan $$
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ spanning-tree guard root
+ authentication port-control auto
+ dot1x pae authenticator
+ mab
+ authentication host-mode multi-domain
+ authentication event fail action authorize vlan $guestVlan$
+ authentication violation restrict
+
+logging buffered 100000 warnings
+logging trap warnings
+logging host $syslogIP$
+
+archive
+ log config
+  logging enable
+  notify syslog
+  hidekeys
+
+ntp server $ntpServer$ prefer
+ntp authenticate
+ntp authentication-key 1 md5 $ntpKey$
+ntp trusted-key 1
+
+ip dhcp snooping
+ip dhcp snooping vlan $$,$$,$$
+no ip dhcp snooping information option
+ip dhcp snooping verify mac-address
+
+ip arp inspection vlan $$,$$,$$
+
+mls qos
+interface GigabitEthernet$$/$$/$$
+ mls qos trust dscp
+
+control-plane
+ service-policy input CONTROL_PLANE_POLICY
+
+policy-map CONTROL_PLANE_POLICY
+ class CONTROL_PLANE_CLASS
+  police 64000 8000 conform-action transmit exceed-action drop violate-action drop
+
+class-map match-any CONTROL_PLANE_CLASS
+ match protocol ssh
+ match protocol snmp
+ match protocol ntp
+ match protocol arp
+ match protocol dhcp
+
+flow exporter CAMPUS-EXPORT
+ destination $netflowCollector$
+ transport udp 2055
+
+flow monitor CAMPUS-MONITOR
+ exporter CAMPUS-EXPORT
+ record netflow-original
+
+interface Vlan99
+ ip flow monitor CAMPUS-MONITOR input
+
+no snmp-server community public
+no snmp-server community private
+snmp-server community $snmpString$ RO
+snmp-server group SecGroup v3 priv
+snmp-server user SecUser SecGroup v3 auth sha $AuthPassword$ priv aes 256 $PrivPassword$
+snmp-server location "Data Center"
+snmp-server contact "admin@uccs.edu"
