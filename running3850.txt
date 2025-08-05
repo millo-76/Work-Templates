@@ -163,6 +163,17 @@ interface range $UserPorts$
  source template DOT1X_TEMPLATE
  load-interval 30
 
+! --- Wireless AP Port ---
+interface $APPort$
+ description Access Point Uplink
+ switchport mode access
+ switchport access vlan $UserVLAN$
+ spanning-tree portfast
+ spanning-tree bpduguard enable
+ mls qos trust dscp
+ ip dhcp snooping trust
+ ip arp inspection trust
+
 ! --- INFRASTRUCTURE / UPLINK PORTS ---
 interface $UplinkPort$
  description Uplink to Distribution/Core

@@ -86,14 +86,13 @@ interface Vlan$MgmtVLAN$
  no shutdown
 
 ! --------------------------------------------------------
-! Access Point Uplink (Trunk)
+! Access Point Uplink
 ! --------------------------------------------------------
-interface GigabitEthernet$apTrunk$
- description Uplink to Access Point
- switchport trunk encapsulation dot1q
- switchport mode trunk
- switchport trunk allowed vlan $UserVLAN$,$VoiceVLAN$,$MgmtVLAN$
- spanning-tree portfast trunk
+interface GigabitEthernet$apPort$
+ description AP Uplink
+ switchport mode access
+ switchport access vlan $UserVLAN$
+ spanning-tree portfast
  spanning-tree bpduguard enable
  ip dhcp snooping trust
  ip arp inspection trust
