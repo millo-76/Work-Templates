@@ -1,43 +1,79 @@
-!	*Global Configuration*
-service timestamps debug datetime msec
-service timestamps log datetime msec
-no service pad
+! --------------------------------------------------------
+! Hostname and Basic Security
+! --------------------------------------------------------
+hostname $SwitchName$
+no ip domain-lookup
+enable secret $enableSecret$
 service password-encryption
 secure boot-image
 secure boot-config
 security passwords min-length 12
-no ip http server
-no ip http secure-server
-no ip source-route
-no cdp run
-no lldp run
 
+! --------------------------------------------------------
+! Banner
+! --------------------------------------------------------
+banner motd ^
+Unauthorized access is prohibited.^
 
-!	*Domain & SSH*
-hostname $SwitchName$
-ip domain-name uccs.edu
-crypto key generate rsa modulus 2048
-ip ssh version 2
-ip ssh time-out 300
+! --------------------------------------------------------
+! Time and Logging
+! --------------------------------------------------------
+clock timezone MST -7
+clock summer-time MDT recurring
+ntp server $ntp1$
+ntp server $ntp2$
+ntp authenticate
+ntp authentication-key 1 md5 $ntpKey$
+ntp trusted-key 1
 
+service timestamps log datetime msec localtime show-timezone
+service timestamps debug datetime msec localtime show-timezone
 
-!	*AAA with 802.1X*
+logging buffered 100000 warnings
+logging trap informational
+logging host $syslogServer$
+logging source-interface Vlan$MgmtVLAN$
+
+archive
+ path flash:backup-$SwitchName$-config
+ write-memory
+ log config
+  logging enable
+  notify syslog
+  hidekeys
+
+! --------------------------------------------------------
+! AAA and RADIUS Authentication
+! --------------------------------------------------------
 aaa new-model
-aaa authentication dot1x default group radius
-aaa authorization network default group radius
+aaa group server radius RADIUS-GROUP
+ server name $radiusServer1$
+ server name $radiusServer2$
+aaa authentication dot1x default group RADIUS-GROUP
+aaa authorization network default group RADIUS-GROUP
 aaa accounting update periodic 5
-aaa accounting dot1x default start-stop group radius
+aaa accounting dot1x default start-stop group RADIUS-GROUP
+aaa accounting exec default start-stop group RADIUS-GROUP
+aaa accounting commands 15 default start-stop group RADIUS-GROUP
 
 radius-server host $radiusIP$ auth-port 1812 acct-port 1813 key $radiusKey$
 radius-server timeout 5
 radius-server retransmit 3
+radius-server deadtime 10
+ip radius source-interface Vlan$MgmtVLAN$
 
-
-!	*Local Fallback Admin*
 username admin privilege 15 secret $adminSecret$
 
+! --------------------------------------------------------
+! SSH Access
+! --------------------------------------------------------
+ip domain-name uccs.edu
+ip ssh version 2
+ip ssh time-out 60
+ip ssh authentication-retries 2
+ip ssh logging events
+crypto key generate rsa modulus 2048
 
-!	*Console & VTY Access*
 line console 0
  login local
  exec-timeout 5 0
@@ -46,41 +82,56 @@ line console 0
 line vty 0 15
  login authentication default
  transport input ssh
- exec-timeout 5 0
+ exec-timeout 10 0
  access-class MGMT_ACCESS in
 
-
-!	*Access-Class ACL for Remote SSH*
 ip access-list standard MGMT_ACCESS
  permit $mgmtSubnet$ 0.0.0.255
  deny any
 
-
-!	*SNMPv3*
+! --------------------------------------------------------
+! SNMP Configuration
+! --------------------------------------------------------
 no snmp-server community public
 no snmp-server community private
-snmp-server community $snmpString$ RO
-snmp-server group SecGroup v3 priv
-snmp-server user SecUser SecGroup v3 auth sha $AuthPassword$ priv aes 256 $PrivPassword$
-snmp-server location "Data Center"
-snmp-server contact "admin@uccs.edu"
+no snmp-server community $snmpRead$
+no snmp-server community $snmpWrite$
 
+snmp-server group SECURE v3 priv
+snmp-server user $snmpUser$ SECURE v3 auth sha $snmpAuth$ priv aes 256 $snmpPriv$
+snmp-server location $location$
+snmp-server contact $adminContact$
 
-!	*VLAN Definitions*
-vlan 10
- name $VLANname&
-vlan 20
- name $VLANname&
-vlan 30
- name $VLANname&
-vlan 99
- name $VLANname&
+! --------------------------------------------------------
+! VLANs
+! --------------------------------------------------------
+vlan $UserVLAN$
+ name $UserVLANname$
+vlan $VoiceVLAN$
+ name $VoiceVLANname$
+vlan $MgmtVLAN$
+ name MGMT
+vlan $guestVlan$
+ name $guestVLANname$
 
+! --------------------------------------------------------
+! Layer 3 SVI for Management
+! --------------------------------------------------------
+interface Vlan$MgmtVLAN$
+ ip address $mgmtIP$ $mgmtSubnetMask$
+ ip flow monitor UserMonitor input
+ no shutdown
 
-!	*802.1X Interface Template*
+ip default-gateway $mgmtGateway$
+
+! --------------------------------------------------------
+! DOT1X Interface Template
+! --------------------------------------------------------
 template type interface DOT1X_TEMPLATE
- service-policy input MARK-DOT1X-TRAFFIC
+ service-policy input MARKING
  authentication port-control auto
+ authentication periodic
+ authentication timer reauthenticate server
  dot1x pae authenticator
  mab
  authentication priority dot1x mab
@@ -91,18 +142,33 @@ template type interface DOT1X_TEMPLATE
  authentication violation restrict
  spanning-tree portfast
  spanning-tree bpduguard enable
+ spanning-tree guard root
+ storm-control broadcast level 1.00
+ storm-control action shutdown
  switchport port-security
  switchport port-security maximum 2
  switchport port-security violation restrict
  switchport port-security mac-address sticky
+ ip dhcp snooping trust
 
+! --------------------------------------------------------
+! Port Configurations
+! --------------------------------------------------------
 
-!	*Trunked AP Port*
-interface GigabitEthernet$$/$$/$$
- description Uplink to AP-3850
+! --- USER ACCESS PORTS ---
+interface range $UserPorts$
+ switchport mode access
+ switchport access vlan $UserVLAN$
+ switchport voice vlan $VoiceVLAN$
+ source template DOT1X_TEMPLATE
+ load-interval 30
+
+! --- INFRASTRUCTURE / UPLINK PORTS ---
+interface $UplinkPort$
+ description Uplink to Distribution/Core
  switchport trunk encapsulation dot1q
  switchport mode trunk
- switchport trunk allowed vlan $$,$$,$$
+ switchport trunk allowed vlan $UserVLAN$,$VoiceVLAN$,$MgmtVLAN$
  spanning-tree portfast trunk
  spanning-tree bpduguard enable
  spanning-tree guard root
@@ -110,24 +176,12 @@ interface GigabitEthernet$$/$$/$$
  ip arp inspection trust
  mls qos trust dscp
 
-
-!	*Wired Access Port*
-interface range GigabitEthernet$$/$$/$$ - $$
- description Wired Client Access
- switchport mode access
- switchport access vlan $$
- load-interval 30
- storm-control broadcast level 10.00
- service-policy input MARK-DOT1X-TRAFFIC
- source template DOT1X_TEMPLATE
-
-
-!	*Voice Port*
-interface GigabitEthernet$$/$$/$$
+! --- VOICE + PC COMBO PORT ---
+interface $VoIPPort$
  description IP Phone + PC
  switchport mode access
- switchport access vlan $$
- switchport voice vlan $$
+ switchport access vlan $UserVLAN$
+ switchport voice vlan $VoiceVLAN$
  spanning-tree portfast
  spanning-tree bpduguard enable
  spanning-tree guard root
@@ -138,44 +192,24 @@ interface GigabitEthernet$$/$$/$$
  authentication event fail action authorize vlan $guestVlan$
  authentication violation restrict
 
-
-!	*Syslog & Configuration Archiving*
-logging buffered 100000 warnings
-logging trap warnings
-logging host $syslogIP$
-
-archive
- log config
-  logging enable
-  notify syslog
-  hidekeys
-
-
-!	*NTP Configuration*
-ntp server $ntpServer$ prefer
-ntp authenticate
-ntp authentication-key 1 md5 $ntpKey$
-ntp trusted-key 1
-
-
-!	*DHCP Snooping*
+! --------------------------------------------------------
+! DHCP Snooping & ARP Inspection
+! --------------------------------------------------------
 ip dhcp snooping
-ip dhcp snooping vlan $$,$$,$$
+ip dhcp snooping vlan $UserVLAN$
 no ip dhcp snooping information option
 ip dhcp snooping verify mac-address
 
+ip arp inspection vlan $UserVLAN$
 
-!	*ARP Inspection*
-ip arp inspection vlan $$,$$,$$
-
-
-!	*QoS Trust on Trunks*
+! --------------------------------------------------------
+! QoS and Control Plane Protection
+! --------------------------------------------------------
 mls qos
 interface GigabitEthernet$$/$$/$$
  mls qos trust dscp
 
 
-!	*Control Plane Policing*
 control-plane
  service-policy input CONTROL_PLANE_POLICY
 
@@ -190,15 +224,29 @@ class-map match-any CONTROL_PLANE_CLASS
  match protocol arp
  match protocol dhcp
 
+! --------------------------------------------------------
+! NetFlow Configuration
+! --------------------------------------------------------
+flow exporter CampusFlow
+ destination $FlowCollector$
+ source Vlan$MgmtVLAN$
+ transport udp 9996
+ template data timeout 60
 
-!	*NetFlow (Optional)*
-flow exporter CAMPUS-EXPORT
- destination $netflowCollector$
- transport udp 2055
+flow record netflow-original
+ match ipv4 source address
+ match ipv4 destination address
+ collect counter bytes
+ collect counter packets
+ collect timestamp sys-uptime first
+ collect timestamp sys-uptime last
 
-flow monitor CAMPUS-MONITOR
- exporter CAMPUS-EXPORT
+flow monitor UserMonitor
  record netflow-original
+ exporter CampusFlow
 
-interface Vlan99
- ip flow monitor CAMPUS-MONITOR input
+! --------------------------------------------------------
+! Save and End
+! --------------------------------------------------------
+end
+write memory
