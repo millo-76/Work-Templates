@@ -4,44 +4,46 @@ This project provides a Bash-driven modular configuration builder for Cisco devi
 It organizes switch configurations into reusable global, modules, and saved sets, making it easy to assemble custom configurations interactively.
 
 Features
-    *Interactive CLI menu – select device type (3850, C9800).
+*Interactive CLI menu – select device type (3850, C9800).
 
-    *Global – device-type–specific base configurations.
+*Global – device-type–specific base configurations.
 
-    *Modular – VLANs, ACLs, interfaces, AP ports, etc.
+*Modular – VLANs, ACLs, interfaces, AP ports, etc.
 
-    *Saved sets – save commonly used module bundles for quick reuse.
+*Saved sets – save commonly used module bundles for quick reuse.
 
-    *Variable substitution – fill in placeholders (e.g., hostname, domain).
-    
-    *Output builder – exports final .conf files ready for deployment.
+*Variable substitution – fill in placeholders (e.g., hostname, domain).
+
+*Output builder – exports final .conf files ready for deployment.
 
 Project Structure
-    cisco-config-builder/
-    │
-    │── global/                 # Device-specific global configs
-    │   ├── c9800_global.conf
-    │   ├── 3850_global.conf
-    │
-    │── modules/                # Modular config files
-    │   ├── vlans.conf
-    │   ├── acls.conf
-    │   ├── interfaces.conf
-    │   ├── ap_ports.conf
-    │
-    │── sets/                   # Saved module lists (auto-created)
-    │   └── (your sets here)
-    │
-    │── output/                 # Final generated configs
-    │   └── (your configs here)
-    │
-    │── build_config.sh          # Main Bash script
-    └── README.md
+
+cisco-config-builder/
+│
+│── global/                 # Device-specific global configs
+│   ├── c9800_global.conf
+│   ├── 3850_global.conf
+│
+│── modules/                # Modular config files
+│   ├── vlans.conf
+│   ├── acls.conf
+│   ├── interfaces.conf
+│   ├── ap_ports.conf
+│
+│── sets/                   # Saved module lists (auto-created)
+│   └── (your sets here)
+│
+│── output/                 # Final generated configs
+│   └── (your configs here)
+│
+│── build_config.sh          # Main Bash script
+└── README.md
 
 Usage
-    Clone the repo:
-        git clone https://github.com/<your-username>/cisco-config-builder.git
-        cd cisco-config-builder
+
+Clone the repo:
+    git clone https://github.com/<your-username>/cisco-config-builder.git
+     cd cisco-config-builder
 
     Make the script executable:
         chmod +x build_config.sh
