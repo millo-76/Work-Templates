@@ -5,136 +5,91 @@
 # Description: Helps build modular configs for Cisco WLCs and Switches.
 #
 
-# -------------------------------
-# Paths
-# -------------------------------
+#!/bin/bash
+
+# ===============================
+# Cisco Config Builder
+# ===============================
+
+SETS_DIR="./sets"
 GLOBAL_DIR="./global"
-MODULE_DIR="./modules"
-SET_DIR="./sets"
+MODULES_DIR="./modules"
 OUTPUT_DIR="./output"
 
-# Ensure directories exist
-mkdir -p "$GLOBAL_DIR" "$MODULE_DIR" "$SET_DIR" "$OUTPUT_DIR"
+mkdir -p "$OUTPUT_DIR"
 
-# -------------------------------
-# Step 1: Pick device type
-# -------------------------------
-echo "Select device type:"
-select DEVTYPE in "C9800-WLC" "Catalyst-3850" "Quit"; do
-  case $DEVTYPE in
-    "C9800-WLC")
-      GLOBAL_FILE="$GLOBAL_DIR/c9800_global.conf"
-      break
-      ;;
-    "Catalyst-3850")
-      GLOBAL_FILE="$GLOBAL_DIR/3850_global.conf"
-      break
-      ;;
-    "Quit")
-      exit 0
-      ;;
-    *)
-      echo "Invalid option."
-      ;;
-  esac
-done
-
-# -------------------------------
-# Step 2: Manage module sets
-# -------------------------------
-echo "Do you want to manage your saved module sets? (y/n)"
-read MANAGE
-if [[ "$MANAGE" == "y" ]]; then
-  echo "Module Set Manager"
-  select ACTION in "List Sets" "Delete Set" "Edit Set" "Back"; do
-    case $ACTION in
-      "List Sets")
-        echo "Available sets:"
-        ls "$SET_DIR"
-        ;;
-      "Delete Set")
-        echo "Select a set to delete:"
-        select DELSET in $(ls $SET_DIR); do
-          if [[ -f "$SET_DIR/$DELSET" ]]; then
-            rm "$SET_DIR/$DELSET"
-            echo "🗑️ Deleted $DELSET"
-            break
-          fi
-        done
-        ;;
-      "Edit Set")
-        echo "Select a set to edit:"
-        select EDITSET in $(ls $SET_DIR); do
-          if [[ -f "$SET_DIR/$EDITSET" ]]; then
-            nano "$SET_DIR/$EDITSET"
-            echo "✏️ Edited $EDITSET"
-            break
-          fi
-        done
-        ;;
-      "Back")
-        break
-        ;;
+# Step 1: Pick switch type
+echo "Select switch type:"
+select SWITCH in "C9800" "3850"; do
+    case $SWITCH in
+        C9800) GLOBAL_FILE="$GLOBAL_DIR/c9800_global.conf"; break ;;
+        3850)  GLOBAL_FILE="$GLOBAL_DIR/3850_global.conf"; break ;;
+        *) echo "Invalid option." ;;
     esac
-  done
-fi
-
-# -------------------------------
-# Step 3: Select or create module set
-# -------------------------------
-echo "Do you want to use an existing module set? (y/n)"
-read USESET
-if [[ "$USESET" == "y" ]]; then
-  echo "Select a set:"
-  select SETFILE in $(ls $SET_DIR); do
-    MODULES=$(cat "$SET_DIR/$SETFILE")
-    echo "Using set: $SETFILE"
-    break
-  done
-else
-  echo "Select modules to include (space-separated numbers):"
-  select MOD in $(ls $MODULE_DIR); do
-    echo "You selected: $MOD"
-  done
-  read -p "Enter modules (space-separated): " MODULES
-  echo "Save this selection as a new set? (y/n)"
-  read SAVESET
-  if [[ "$SAVESET" == "y" ]]; then
-    read -p "Enter set name: " NEWSET
-    echo "$MODULES" > "$SET_DIR/$NEWSET.set"
-    echo "💾 Saved set as $NEWSET.set"
-  fi
-fi
-
-# -------------------------------
-# Step 4: Collect variables
-# -------------------------------
-echo "Enter hostname: "
-read HOSTNAME
-echo "Enter domain name: "
-read DOMAIN
-echo "Enter management VLAN ID: "
-read VLANID
-
-# -------------------------------
-# Step 5: Assemble config
-# -------------------------------
-OUTFILE="$OUTPUT_DIR/${HOSTNAME}_config.txt"
-echo "Building config -> $OUTFILE"
-
-# Start with global config
-cp "$GLOBAL_FILE" "$OUTFILE"
-
-# Add each module
-for M in $MODULES; do
-  if [[ -f "$MODULE_DIR/$M" ]]; then
-    cat "$MODULE_DIR/$M" >> "$OUTFILE"
-  fi
 done
 
-# Replace variables in config
-sed -i "s/\$WLCName\$/$HOSTNAME/g" "$OUTFILE"
-sed -i "s/\$DomainName\$/$DOMAIN/g" "$OUTFILE"
-sed -i "s/\$MgmtVLAN\$/$VLANID/g" "$OUTFILE"
+# Step 2: Ensure at least one set exists
+if [ ! -d "$SETS_DIR" ] || [ -z "$(ls -A "$SETS_DIR")" ]; then
+    echo "No configuration sets found in $SETS_DIR."
+    echo "Launching Set Manager to create one..."
+    ./set_manager.sh
+fi
 
-echo "✅ Config build complete: $OUTFILE"
+# Step 3: Pick a saved set
+echo "Select a configuration set:"
+select SET_FILE in "$SETS_DIR"/*; do
+    if [ -n "$SET_FILE" ]; then
+        break
+    else
+        echo "Invalid option."
+    fi
+done
+
+# Step 4: Output file name
+read -p "Enter output filename (without extension): " OUT_NAME
+OUTPUT_FILE="$OUTPUT_DIR/${OUT_NAME}.conf"
+
+echo "Building configuration into $OUTPUT_FILE ..."
+
+# Start fresh
+cat "$GLOBAL_FILE" > "$OUTPUT_FILE"
+echo "" >> "$OUTPUT_FILE"
+
+# Step 5: Process selected modules
+while IFS= read -r MODULE; do
+    MODULE_FILE="$MODULES_DIR/$MODULE"
+    if [ -f "$MODULE_FILE" ]; then
+        echo "Adding $MODULE module..."
+
+        if [[ "$MODULE" == "vlans.conf" ]]; then
+            # Special VLAN handling
+            echo "Do you want to configure VLANs now? (y/n)"
+            read VLAN_CHOICE
+            if [[ "$VLAN_CHOICE" =~ ^[Yy]$ ]]; then
+                while true; do
+                    read -p "Enter VLAN ID (or 'done' to finish): " VLAN_ID
+                    if [[ "$VLAN_ID" == "done" ]]; then break; fi
+                    read -p "Enter VLAN Name: " VLAN_NAME
+                    {
+                        echo "vlan $VLAN_ID"
+                        echo " name $VLAN_NAME"
+                        echo "!"
+                    } >> "$OUTPUT_FILE"
+                done
+            else
+                cat "$MODULE_FILE" >> "$OUTPUT_FILE"
+            fi
+        else
+            # Standard module, with variable substitution
+            while IFS= read -r LINE; do
+                eval "echo \"$LINE\"" >> "$OUTPUT_FILE"
+            done < "$MODULE_FILE"
+        fi
+
+        echo "" >> "$OUTPUT_FILE"
+    else
+        echo "Skipping missing module: $MODULE"
+    fi
+done < "$SET_FILE"
+
+echo "Config build complete: $OUTPUT_FILE"
