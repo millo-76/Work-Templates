@@ -32,7 +32,7 @@ It organizes switch configurations into reusable global, modules, and saved sets
 
 Clone the repo:
 
-    git clone https://github.com/<your-username>/config-builder.git
+    git clone https://github.com/millo-76/config-builder.git
     cd config-builder
 
 Make the script executable:
